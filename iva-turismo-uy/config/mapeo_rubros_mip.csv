@@ -1,0 +1,9 @@
+rubro_etr,industria_mip,codigo_mip,justificacion
+Alimentacion,Servicios de alojamiento y de comida,I55-56,Rubros de gastronomia y restaurantes mapean directamente a la division CIIU I (Alojamiento y Servicios de Comida)
+Alojamiento,Servicios de alojamiento y de comida,I55-56,Los servicios de hoteleria y alojamiento se ubican en la misma division CIIU
+Transporte interno,Transporte y almacenamiento,H49-53,Transporte terrestre fluvial y aereo dentro de Uruguay
+Recreacion y cultura,Actividades artisticas de entretenimiento y recreativas,R90-93,Atracciones turisticas museos espectaculos
+Compras y souvenirs,Comercio al por mayor y menor,G45-47,Compras en tiendas comercios y mercados
+Servicios de salud,Servicios de salud humana y de asistencia social,Q86-88,Turismo medico y gastos medicos imprevistos
+Comunicaciones,Informacion y comunicaciones,J58-63,Telefonia internet y servicios de comunicacion
+Otros servicios,Otras actividades de servicios,S94-96,Rubros residuales no clasificados en otras categorias

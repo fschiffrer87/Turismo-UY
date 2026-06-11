@@ -1,0 +1,152 @@
+# =============================================================================
+# SUPUESTOS DEL MODELO — iva-turismo-uy
+# Todos los parámetros numéricos del pipeline viven aquí.
+# Cada parámetro tiene: valor, rango (para Monte Carlo), fuente, justificacion
+# =============================================================================
+
+# --- Shocks de precio (puntos porcentuales de IVA adicional) ----------------
+shock_pp:
+  valor: 13
+  rango: null          # parámetro de diseño de política, no se varía en MC
+  fuente: "Ley 17.934 (mod. Ley 20.212) + Decreto 434/023 prorrogado por Decreto 220/2025"
+  justificacion: >
+    Escenario central: cae el decreto estacional (exoneración total) pero queda
+    el piso de 9 puntos de la Ley 17.934. El turista pasa de IVA 0% a IVA 13%
+    (22% – 9% de devolución permanente). Precio relativo: índice 100 → 113.
+
+shock_pp_variante:
+  valor: 22
+  rango: null
+  fuente: "Ley 17.934 + Decreto 434/023"
+  justificacion: >
+    Variante: eliminación total del régimen (caen tanto el decreto estacional
+    como la devolución permanente). El turista paga la tasa general del 22%.
+    Precio relativo: índice 100 → 122.
+
+# --- Absorción de margen (fracción del shock absorbida por los productores) --
+phi:
+  valor: 0.15
+  rango: [0.0, 0.30]
+  fuente: "Literatura internacional (Benzarti & Carloni, 2019; Harju et al., 2022)"
+  justificacion: >
+    Las subas de IVA en gastronomía se trasladan casi completamente al precio
+    final. Se asume una absorción del 15% como central (el proveedor absorbe
+    15% del shock, el consumidor paga el 85% restante).
+
+# --- Elasticidades de demanda -------------------------------------------------
+epsilon_intensivo:
+  valor: -1.0
+  rango: [-1.5, -0.6]
+  fuente: "Literatura de demanda de restaurantes; supuesto declarado"
+  justificacion: >
+    Elasticidad precio de la demanda intensiva (gasto gastronómico condicional
+    al viaje). Rango refleja que hay sustitutos cercanos (supermercados,
+    preparación propia) pero también inercia en el comportamiento turístico.
+
+epsilon_extensivo:
+  valor: -1.2
+  rango: [-1.8, -0.8]
+  fuente: "Meta-análisis de Peng et al. (2015); Crouch (1995, 1996)"
+  justificacion: >
+    Elasticidad precio de la demanda extensiva (llegadas/noches totales).
+    La demanda turística hacia Uruguay desde Argentina es relativamente
+    elástica al precio. Rango cubre estudios regionales y globales.
+
+# --- Estructura del gasto turístico ------------------------------------------
+w:
+  valor: null          # se calcula de la ETR; si falla, usar w_fallback
+  rango: null
+  fuente: "MINTUR — Encuesta de Turismo Receptivo (ETR)"
+  justificacion: >
+    Peso del gasto en alimentación sobre el gasto total del viaje.
+    Se calcula directamente de la ETR. Si no está disponible, usar w_fallback.
+
+w_fallback:
+  valor: 0.18
+  rango: [0.14, 0.22]
+  fuente: "Supuesto declarado — fallback si la ETR no provee el dato"
+  justificacion: >
+    Estimación conservadora basada en estructuras de gasto turístico
+    latinoamericanas (UNWTO, 2022). Se usa solo si la ETR no está disponible.
+
+share_restaurantes:
+  valor: 0.70
+  rango: [0.55, 0.85]
+  fuente: "Supuesto declarado"
+  justificacion: >
+    Fracción del rubro 'alimentación' de la ETR que corresponde a restaurantes
+    y bares (excluye supermercados, almacenes, etc.). El diccionario de la ETR
+    no permite separar rubros con precisión. Rango amplio refleja incertidumbre.
+
+share_tarjeta_exterior:
+  valor: 0.65
+  rango: [0.50, 0.80]
+  fuente: "Supuesto declarado — solo para la vía ETR de estimación de B"
+  justificacion: >
+    Fracción del gasto gastronómico de no residentes pagada con tarjeta emitida
+    en el exterior (requisito para acceder a la exoneración). La ETR no releva
+    medio de pago. La vía DGI no necesita este supuesto.
+
+# --- Base afectada (B) — completar después del módulo 01 ----------------------
+B_dgi:
+  valor: null          # se llena en 02_base_afectada.py desde datos DGI
+  rango: null
+  fuente: "DGI — Informe de Gasto Tributario"
+  justificacion: "Vía preferente. Se despeja como B = GT_estacional / tasa."
+
+B_etr:
+  valor: null          # se llena en 02_base_afectada.py desde datos ETR
+  rango: null
+  fuente: "MINTUR — ETR"
+  justificacion: "Segunda vía de triangulación."
+
+B_bcu:
+  valor: null          # se llena si está disponible el reporte BCU pagos
+  rango: null
+  fuente: "BCU — Reporte Sistema de Pagos Minorista"
+  justificacion: "Cota superior de consistencia."
+
+# --- Parámetros fiscales ------------------------------------------------------
+presion_tributaria_efectiva:
+  valor: 0.27
+  rango: [0.24, 0.30]
+  fuente: "BCU / MEF — Cuentas Nacionales; verificar dato oficial reciente"
+  justificacion: >
+    Recaudación total / PIB nominal de Uruguay. Usado para estimar la
+    recaudación perdida por menor actividad económica (efecto indirecto fiscal).
+
+# --- PIB nominal (input manual de último recurso) ----------------------------
+pib_nominal_musd:
+  valor: null          # completar con dato oficial si no se puede descargar
+  rango: null
+  fuente: "BCU — Cuentas Nacionales (completar manualmente si descarga falla)"
+  justificacion: >
+    PIB nominal en millones de USD para expresar el impacto como % del PIB.
+    Preferentemente extraído del módulo 01; este campo es fallback manual.
+
+# --- Unidades y año de referencia --------------------------------------------
+moneda_modelo: "USD"   # todas las operaciones en USD corrientes del año_base
+anno_base: 2022        # año de referencia para expresar resultados
+anno_mip: 2016         # año de la Matriz Insumo-Producto del BCU
+
+# --- Monte Carlo --------------------------------------------------------------
+n_sims:
+  valor: 10000
+  rango: null
+  fuente: "Diseño del modelo"
+  justificacion: "Suficiente para convergencia de percentiles P10/P90."
+
+seed:
+  valor: 42
+  rango: null
+  fuente: "Convención de replicabilidad"
+  justificacion: "Semilla fija para reproducibilidad total."
+
+# --- Opciones del modelo Leontief --------------------------------------------
+usar_tipo2:
+  valor: false
+  rango: null
+  fuente: "Diseño del modelo"
+  justificacion: >
+    Tipo I (abierto) como escenario central. Tipo II (cerrando hogares, incluye
+    efecto inducido) solo como cota superior; tiende a sobreestimar el impacto.

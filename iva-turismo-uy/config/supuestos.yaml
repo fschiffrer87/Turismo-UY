@@ -150,3 +150,21 @@ usar_tipo2:
   justificacion: >
     Tipo I (abierto) como escenario central. Tipo II (cerrando hogares, incluye
     efecto inducido) solo como cota superior; tiende a sobreestimar el impacto.
+
+# --- Supuestos pedidos por Claude --------------------------------------------
+
+tc_promedio_2022:
+  valor: 41.12
+  fuente: <TC promedio 2022 UYU/USD — fuente BCU>
+deflactor_2016_2022:
+  valor: 0.62854008
+  fuente: <IPC_2016/IPC_2022 — fuente INE>
+pib_nominal_musd:
+  valor: 144793.169764215
+  fuente: <PIB nominal 2022 en MUSD — fuente BCU>
+
+
+
+
+
+

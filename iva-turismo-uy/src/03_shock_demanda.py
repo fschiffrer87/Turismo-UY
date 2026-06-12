@@ -6,7 +6,12 @@ Fórmulas (documentadas en README y en el informe final):
   g_ext = ε_ext × (Δp × w)           ← margen extensivo (todo el gasto turístico)
   g_int = ε_int × Δp                  ← margen intensivo (solo gasto gastronómico)
   ΔD_gastro = B × [(1 + g_ext) × (1 + g_int) − 1]
-  ΔD_rubro_j = gasto_j_temporada × g_ext   (para j ≠ gastronomía)
+
+Resto de rubros (alojamiento, transporte, etc.): solo margen extensivo,
+aplicado al gasto de temporada del rubro escalado por la fracción de turistas
+efectivamente afectados (afectacion_share = B / gasto_alimentacion_temporada).
+Así se evita el doble conteo y no se atribuye el shock a turistas que no
+acceden al beneficio (pagan efectivo / no consumen restaurantes).
 
 Unidades: millones de USD corrientes del año base.
 """
@@ -21,46 +26,25 @@ from utils import (
     cargar_supuestos, obtener_valor, buscar_archivo, separador, checkpoint
 )
 
+# Misma ventana de temporada que la Etapa 02
+TEMPORADA_INICIO = "2022-11-15"
+TEMPORADA_FIN = "2023-04-30"
 
-def calcular_shock(
-    shock_pp: float,
-    phi: float,
-    b_central: float,
-    w: float,
-    epsilon_ext: float,
-    epsilon_int: float,
-    label: str = "escenario_central",
-) -> dict:
-    """
-    Calcula la respuesta de demanda para un shock dado.
+RUBROS_ETR = [
+    "GastoAlimentacion", "GastoAlojamiento", "GastoTransporte",
+    "GastoCultural", "GastoTours", "GastoCompras", "GastoOtros",
+]
 
-    Parámetros
-    ----------
-    shock_pp    : puntos porcentuales de IVA adicional (ej. 13)
-    phi         : fracción del shock absorbida por productores (ej. 0.15)
-    b_central   : base afectada en MUSD (gasto gastronómico de no residentes en temporada)
-    w           : peso de gastronomía en el gasto total del viaje
-    epsilon_ext : elasticidad extensiva (número negativo)
-    epsilon_int : elasticidad intensiva (número negativo)
-    label       : etiqueta del escenario
 
-    Retorna dict con los componentes del cambio en demanda.
-    """
-    assert epsilon_ext <= 0, "epsilon_ext debe ser negativo (convención)"
-    assert epsilon_int <= 0, "epsilon_int debe ser negativo (convención)"
+def calcular_shock(shock_pp, phi, b_central, w, epsilon_ext, epsilon_int, label):
+    """Calcula la respuesta de demanda gastronómica para un shock dado."""
+    assert epsilon_ext <= 0 and epsilon_int <= 0, "elasticidades deben ser negativas"
     assert 0 <= phi < 1, "phi debe estar en [0, 1)"
     assert 0 < w <= 1, "w debe estar en (0, 1]"
 
-    # Fracción del shock que llega al precio al turista (neto de absorción de margen)
     delta_p = (1 - phi) * (shock_pp / 100)
-
-    # Margen extensivo: caída en llegadas/noches (afecta TODO el gasto turístico)
     g_ext = epsilon_ext * (delta_p * w)
-
-    # Margen intensivo: caída del gasto gastronómico condicional al viaje
     g_int = epsilon_int * delta_p
-
-    # Cambio neto en gasto gastronómico afectado (B ya es temporada, no anualizar)
     delta_d_gastro = b_central * ((1 + g_ext) * (1 + g_int) - 1)
 
     return {
@@ -79,141 +63,114 @@ def calcular_shock(
     }
 
 
-def calcular_shock_por_rubros(
-    shock_central: dict,
-    ruta_etr: pathlib.Path | None,
-) -> pd.DataFrame:
-    """
-    Calcula la caída de demanda (solo margen extensivo) para rubros no gastronómicos.
-    Si no hay datos ETR desagregados, devuelve un DataFrame vacío con nota.
-    """
-    g_ext = shock_central["g_ext"]
-    rubros_fallback = {
-        "Alimentacion": {"gasto_temporada_musd": shock_central["b_central_musd"], "tipo": "gastronómico"},
-        "Alojamiento":  {"gasto_temporada_musd": None, "tipo": "otros"},
-        "Transporte":   {"gasto_temporada_musd": None, "tipo": "otros"},
-        "Recreacion":   {"gasto_temporada_musd": None, "tipo": "otros"},
-        "Compras":      {"gasto_temporada_musd": None, "tipo": "otros"},
-    }
+def gasto_temporada_por_rubro() -> pd.Series:
+    """Gasto expandido de temporada por rubro de la ETR (MUSD)."""
+    ruta = buscar_archivo("mintur_etr_agregados.xlsx")
+    if ruta is None:
+        raise FileNotFoundError("ETR no encontrada en data/manual/")
+    df = pd.read_excel(ruta, sheet_name="Datos")
+    df["fi"] = pd.to_datetime(df["FechaIngreso"])
+    m = (df["fi"] >= TEMPORADA_INICIO) & (df["fi"] <= TEMPORADA_FIN)
+    d = df[m]
+    return pd.Series(
+        {r: (d[r] * d["Coef"]).sum() / 1e6 for r in RUBROS_ETR}, name="gasto_temporada_musd"
+    )
 
-    if ruta_etr is None:
-        print("  ⚠ ETR no disponible: los rubros no gastronómicos no tienen valores de gasto.")
-        print("    El vector de shock Δf solo incluirá la gastronomía.")
-        filas = []
-        for rubro, datos in rubros_fallback.items():
-            filas.append({
-                "rubro": rubro,
-                "gasto_temporada_musd": datos["gasto_temporada_musd"],
-                "delta_d_musd": (
-                    datos["gasto_temporada_musd"] * g_ext
-                    if datos["gasto_temporada_musd"] is not None and datos["tipo"] != "gastronómico"
-                    else None
-                ),
-                "tipo": datos["tipo"],
-                "fuente": "no disponible — ETR faltante",
-            })
-        return pd.DataFrame(filas)
 
-    # Si la ETR está disponible, leer y calcular (lógica simplificada)
-    # La estructura detallada depende del formato real del archivo
-    print(f"  → Leyendo rubros de la ETR: {ruta_etr.name}")
-    # Implementación completa después de conocer estructura real del archivo
-    return pd.DataFrame()
+def construir_shock_rubros(sc: dict, gasto_rubros: pd.Series) -> pd.DataFrame:
+    """
+    Construye el vector de shock por rubro de la ETR.
+      - Gastronomía: efecto combinado (extensivo × intensivo) sobre B.
+      - Resto: solo extensivo, sobre el gasto de temporada del rubro escalado
+        por afectacion_share = B / gasto_alimentacion_temporada.
+    """
+    b = sc["b_central_musd"]
+    alim_temp = gasto_rubros["GastoAlimentacion"]
+    afectacion_share = b / alim_temp
+    g_ext = sc["g_ext"]
+
+    filas = []
+    for rubro in RUBROS_ETR:
+        gasto = gasto_rubros[rubro]
+        if rubro == "GastoAlimentacion":
+            delta = sc["delta_d_gastro_musd"]
+            detalle = "extensivo × intensivo sobre B"
+        else:
+            delta = gasto * afectacion_share * g_ext
+            detalle = f"solo extensivo × afectacion_share {afectacion_share:.3f}"
+        filas.append({
+            "rubro": rubro,
+            "gasto_temporada_musd": round(gasto, 1),
+            "delta_d_musd": round(delta, 2),
+            "detalle": detalle,
+            "label": sc["label"],
+        })
+    return pd.DataFrame(filas)
 
 
 def main():
     separador("ETAPA 03 — Shock de precio y respuesta de demanda")
-
     supuestos = cargar_supuestos()
 
-    # Leer B central desde archivo procesado
-    ruta_b = DATA_PROCESSED / "base_afectada.csv"
+    # B central decidida en Etapa 02 (vía DGI, aprobada por el usuario)
+    ruta_b = DATA_PROCESSED / "rango_b.csv"
     if not ruta_b.exists():
-        print("  ✗ No se encontró data/processed/base_afectada.csv")
-        print("    Ejecutar primero: python src/02_base_afectada.py")
+        print("  ✗ Ejecutar primero la Etapa 02.")
         sys.exit(1)
+    rb = pd.read_csv(ruta_b).iloc[0]
+    b_central = float(rb["b_central"])
+    print(f"\n  B central: {b_central:.1f} MUSD (rango MC: [{rb['b_min']:.1f}, {rb['b_max']:.1f}])")
 
-    df_b = pd.read_csv(ruta_b)
-    fila_central = df_b[df_b["via"] == "CENTRAL (elegida)"].iloc[0]
-    b_central = fila_central["b_musd"]
-
-    if pd.isna(b_central) or b_central is None:
-        print("  ✗ B central no está definida. Completar la Etapa 02 primero.")
-        sys.exit(1)
-
-    b_central = float(b_central)
-    print(f"\n  B central cargada: {b_central:.1f} MUSD")
-
-    # Leer parámetros
     phi = obtener_valor(supuestos, "phi")
     eps_int = obtener_valor(supuestos, "epsilon_intensivo")
     eps_ext = obtener_valor(supuestos, "epsilon_extensivo")
+    w = obtener_valor(supuestos, "w") or obtener_valor(supuestos, "w_fallback")
+    print(f"  Parámetros: φ={phi}, ε_int={eps_int}, ε_ext={eps_ext}, w={w} "
+          f"({'OBSERVADO ETR' if obtener_valor(supuestos, 'w') else 'fallback SUPUESTO'})")
 
-    # w: preferir calculado de ETR, luego fallback
-    w = obtener_valor(supuestos, "w")
-    if w is None:
-        w = obtener_valor(supuestos, "w_fallback")
-        print(f"  ⚠ Usando w_fallback = {w} (ETR no disponible)")
-    else:
-        print(f"  w calculado de ETR = {w:.3f}")
+    shock_c = obtener_valor(supuestos, "shock_pp")
+    shock_v = obtener_valor(supuestos, "shock_pp_variante")
 
-    shock_central_pp = obtener_valor(supuestos, "shock_pp")
-    shock_variante_pp = obtener_valor(supuestos, "shock_pp_variante")
+    sc = calcular_shock(shock_c, phi, b_central, w, eps_ext, eps_int, "central_13pp")
+    sv = calcular_shock(shock_v, phi, b_central, w, eps_ext, eps_int, "variante_22pp")
 
-    # Calcular escenario central (+13 pp)
-    print(f"\n  Calculando escenario central: shock = +{shock_central_pp} pp")
-    sc = calcular_shock(
-        shock_pp=shock_central_pp, phi=phi, b_central=b_central,
-        w=w, epsilon_ext=eps_ext, epsilon_int=eps_int,
-        label="central_13pp"
-    )
+    print("\n  RESULTADOS DEL SHOCK GASTRONÓMICO:")
+    print(f"  {'Componente':<32} {'Central (+13pp)':>16} {'Variante (+22pp)':>16}")
+    print("  " + "-" * 66)
+    for k in ["delta_p", "g_ext", "g_int", "delta_d_gastro_musd", "delta_d_gastro_pct_de_b"]:
+        print(f"  {k:<32} {sc[k]:>16.4f} {sv[k]:>16.4f}")
 
-    # Calcular variante (+22 pp)
-    print(f"  Calculando variante: shock = +{shock_variante_pp} pp")
-    sv = calcular_shock(
-        shock_pp=shock_variante_pp, phi=phi, b_central=b_central,
-        w=w, epsilon_ext=eps_ext, epsilon_int=eps_int,
-        label="variante_22pp"
-    )
+    # Shock por rubro (para el vector Δf de la MIP)
+    print("\n  Gasto de temporada por rubro (ETR, MUSD) y shock:")
+    gasto_rubros = gasto_temporada_por_rubro()
+    df_rub_c = construir_shock_rubros(sc, gasto_rubros)
+    df_rub_v = construir_shock_rubros(sv, gasto_rubros)
+    df_rubros = pd.concat([df_rub_c, df_rub_v], ignore_index=True)
 
-    # Mostrar resultados
-    print("\n  RESULTADOS DEL SHOCK:")
-    print(f"  {'Componente':<40} {'Central (+13pp)':>16} {'Variante (+22pp)':>16}")
-    print("  " + "-" * 74)
-    for clave in ["delta_p", "g_ext", "g_int", "delta_d_gastro_musd", "delta_d_gastro_pct_de_b"]:
-        print(f"  {clave:<40} {sc[clave]:>16.4f} {sv[clave]:>16.4f}")
+    print(df_rub_c[["rubro", "gasto_temporada_musd", "delta_d_musd"]].to_string(index=False))
+    total_c = df_rub_c["delta_d_musd"].sum()
+    total_v = df_rub_v["delta_d_musd"].sum()
+    print(f"\n  ΔD total (central): {total_c:.2f} MUSD | (variante): {total_v:.2f} MUSD")
 
-    # Rubros ETR para vector Δf
-    ruta_etr = buscar_archivo("mintur_etr_agregados.csv", ["mintur_etr_agregados.xlsx"])
-    df_rubros = calcular_shock_por_rubros(sc, ruta_etr)
-
-    # Guardar resultados
     DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
     OUTPUTS_TABLAS.mkdir(parents=True, exist_ok=True)
-
-    df_shocks = pd.DataFrame([sc, sv])
-    df_shocks.to_csv(DATA_PROCESSED / "shocks.csv", index=False, encoding="utf-8")
-    df_shocks.to_csv(OUTPUTS_TABLAS / "tabla_shocks.csv", index=False, encoding="utf-8")
-    print(f"\n  ✓ Guardado: data/processed/shocks.csv")
-
-    if not df_rubros.empty:
-        df_rubros.to_csv(DATA_PROCESSED / "shock_por_rubros.csv", index=False, encoding="utf-8")
-        print(f"  ✓ Guardado: data/processed/shock_por_rubros.csv")
+    pd.DataFrame([sc, sv]).to_csv(DATA_PROCESSED / "shocks.csv", index=False, encoding="utf-8")
+    df_rubros.to_csv(DATA_PROCESSED / "shock_por_rubros.csv", index=False, encoding="utf-8")
+    pd.DataFrame([sc, sv]).to_csv(OUTPUTS_TABLAS / "tabla_shocks.csv", index=False, encoding="utf-8")
+    df_rubros.to_csv(OUTPUTS_TABLAS / "tabla_shock_rubros.csv", index=False, encoding="utf-8")
+    print("\n  ✓ Guardado: shocks.csv, shock_por_rubros.csv")
 
     checkpoint(
         "Etapa 03 — Shock y demanda",
         [
-            f"Escenario central (+13 pp): ΔD_gastro = {sc['delta_d_gastro_musd']:.1f} MUSD "
-            f"({sc['delta_d_gastro_pct_de_b']:.1f}% de B)",
-            f"Variante (+22 pp): ΔD_gastro = {sv['delta_d_gastro_musd']:.1f} MUSD "
-            f"({sv['delta_d_gastro_pct_de_b']:.1f}% de B)",
-            f"Supuestos clave: φ={phi}, ε_int={eps_int}, ε_ext={eps_ext}, w={w:.3f}",
-            "Validar: ¿las magnitudes son razonables dado B? "
-            "¿El signo de ΔD_gastro es negativo (caída de demanda)?",
-            "Revisar mapeo de rubros ETR→MIP en config/mapeo_rubros_mip.csv antes de Etapa 04.",
+            f"Central (+13 pp): ΔD_gastro = {sc['delta_d_gastro_musd']:.1f} MUSD "
+            f"({sc['delta_d_gastro_pct_de_b']:.1f}% de B); ΔD total con arrastre = {total_c:.1f} MUSD",
+            f"Variante (+22 pp): ΔD_gastro = {sv['delta_d_gastro_musd']:.1f} MUSD; "
+            f"ΔD total = {total_v:.1f} MUSD",
+            f"Supuestos: φ={phi}, ε_int={eps_int}, ε_ext={eps_ext}; w={w} (observado)",
+            "Revisar mapeo rubros→MIP en config/mapeo_rubros_mip.csv antes de la Etapa 04.",
         ]
     )
-
     return {"sc": sc, "sv": sv}
 
 

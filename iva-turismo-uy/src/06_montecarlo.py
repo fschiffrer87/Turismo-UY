@@ -308,8 +308,13 @@ def main():
     eps_ext_rango = supuestos["epsilon_extensivo"]["rango"]
     eps_ext_vals = (eps_ext_rango[0], obtener_valor(supuestos, "epsilon_extensivo"), eps_ext_rango[1])
 
-    w_central = obtener_valor(supuestos, "w") or obtener_valor(supuestos, "w_fallback")
-    w_rango = supuestos["w_fallback"]["rango"]
+    # w: usar el rango del parámetro observado si existe; si no, el del fallback
+    if obtener_valor(supuestos, "w") is not None and supuestos["w"].get("rango"):
+        w_central = obtener_valor(supuestos, "w")
+        w_rango = supuestos["w"]["rango"]
+    else:
+        w_central = obtener_valor(supuestos, "w_fallback")
+        w_rango = supuestos["w_fallback"]["rango"]
     w_vals = (w_rango[0], w_central, w_rango[1])
 
     print(f"\n  Parámetros de la simulación:")
